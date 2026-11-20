@@ -11,6 +11,8 @@ curl -fsSL https://raw.githubusercontent.com/andimon/devtools/main/devtools | ba
 The script will:
 
 - Install the system packages needed to build Erlang and Python from source.
+- - Install zsh, or upgrade it if it is already installed, and make it your login shell (takes effect at your next login).
+- Install [Oh My Zsh](https://ohmyz.sh), or update it if it is already there. On first install, Oh My Zsh moves your existing `~/.zshrc` to `~/.zshrc.pre-oh-my-zsh`.
 - Install [asdf](https://asdf-vm.com), the version manager, or update it if a newer version is out.
 - Add asdf to your `PATH` in `~/.bashrc` and `~/.zshrc` (only once).
 - Install the latest Erlang, then the latest Elixir that works with it, then the latest Python.
