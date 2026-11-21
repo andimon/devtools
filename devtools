@@ -4,67 +4,95 @@ set -euo pipefail
 ASDF_TOOLS=(erlang elixir python)
 ALL_TOOLS=("${ASDF_TOOLS[@]}")
 FLATPAK_APPS=(com.bambulab.BambuStudio)
-DO_FLATPAK=1
-DO_SYSTEM=1
-DO_VSCODE=1
-DO_ZSH=1
+declare -A ENABLED=([system]=1 [zsh]=1 [vscode]=1 [flatpak]=1 [claude]=1 [sublime-merge]=1)
 SELECTED=()
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m  %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mxx\033[0m  %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+unknown() { die "unknown argument: $1 (known tools: ${ALL_TOOLS[*]})"; }
 
 for arg in "$@"; do
     case "$arg" in
-        --no-system) DO_SYSTEM=0 ;;
-        --no-vscode) DO_VSCODE=0 ;;
-        --no-flatpak) DO_FLATPAK=0 ;;
-        --no-zsh) DO_ZSH=0 ;;
+        --no-*)
+            [ -n "${arg#--no-}" ] && [ -n "${ENABLED[${arg#--no-}]+set}" ] || unknown "$arg"
+            ENABLED[${arg#--no-}]=0 ;;
         -h|--help)
-            printf 'Usage: devtools [--no-system] [--no-zsh] [--no-vscode] [--no-flatpak] [tool ...]\n'
-        exit 0 ;;
+            printf 'Usage: devtools [--no-system] [--no-zsh] [--no-vscode] [--no-flatpak] [--no-sublime-merge] [tool ...]\n'
+            exit 0 ;;
         *)
-            if printf '%s\n' "${ALL_TOOLS[@]}" | grep -qx -- "$arg"; then SELECTED+=("$arg")
-    else die "unknown argument: $arg (known tools: ${ALL_TOOLS[*]})"; fi ;;
+            printf '%s\n' "${ALL_TOOLS[@]}" | grep -qx -- "$arg" || unknown "$arg"
+            SELECTED+=("$arg") ;;
     esac
 done
 if [ "${#SELECTED[@]}" -gt 0 ]; then
+    # Filter ALL_TOOLS rather than copying SELECTED: elixir's version depends on erlang running first.
     ASDF_TOOLS=()
     for t in "${ALL_TOOLS[@]}"; do
         for s in "${SELECTED[@]}"; do [ "$s" = "$t" ] && ASDF_TOOLS+=("$t"); done
     done
-    DO_VSCODE=0
-    DO_FLATPAK=0
-    DO_ZSH=0
+    for k in "${!ENABLED[@]}"; do [ "$k" = system ] || ENABLED[$k]=0; done
 fi
 
 SUDO=""
 [ "$(id -u)" -ne 0 ] && SUDO="sudo"
 
-install_system_deps() {
-    have apt-get || { warn "apt-get not found, skipping system build deps"; return; }
+# Warn and return non-zero when apt-get is unavailable: `need_apt "msg" || return`
+need_apt() { have apt-get || { warn "apt-get not found, $1"; return 1; }; }
+
+# Install a deb package, or upgrade it if already installed.
+apt_install_or_upgrade() {
+    local label=$1 pkg=$2
+    if dpkg -s "$pkg" >/dev/null 2>&1; then
+        log "[$label] installed ($(dpkg-query -W -f='${Version}' "$pkg")), upgrading"
+        $SUDO apt-get install -y --only-upgrade "$pkg"
+    else
+        log "[$label] installing"
+        $SUDO apt-get install -y "$pkg"
+    fi
+}
+
+# Add an apt repo unless REPO.sources/REPO.list already exists, then refresh apt.
+# The deb822 sources text is read from stdin.
+# Usage: ensure_apt_repo LABEL VENDOR REPO KEY_URL KEYRING KEY_FILTER <<EOF ... EOF
+ensure_apt_repo() {
+    local label=$1 vendor=$2 list=/etc/apt/sources.list.d/$3 key_url=$4 keyring=$5 key_filter=$6
+    if [ ! -f "$list.sources" ] && [ ! -f "$list.list" ]; then
+        log "[$label] adding $vendor apt repository"
+        $SUDO mkdir -p "${keyring%/*}"
+        curl -fsSL "$key_url" | $key_filter | $SUDO tee "$keyring" >/dev/null
+        $SUDO tee "$list.sources" >/dev/null
+    fi
+    $SUDO apt-get update -qq
+}
+
+# Download a script to a temp file and run it: run_remote_script URL INTERPRETER [ARGS...]
+run_remote_script() {
+    local url=$1 tmp; shift
+    tmp=$(mktemp)
+    curl -fsSL "$url" -o "$tmp"
+    "$@" "$tmp"
+    rm -f "$tmp"
+}
+
+setup_system_deps() {
+    need_apt "skipping system build deps" || return
     log "Installing build dependencies (apt)"
     $SUDO apt-get update -qq
     $SUDO apt-get install -y --no-install-recommends \
-    build-essential autoconf m4 curl git ca-certificates gpg wget unzip \
-    libssl-dev libncurses-dev libreadline-dev libffi-dev zlib1g-dev libbz2-dev \
-    libsqlite3-dev liblzma-dev libgdbm-dev tk-dev uuid-dev xz-utils \
-    libwxgtk3.2-dev libgl1-mesa-dev libglu1-mesa-dev libssh-dev unixodbc-dev \
-    libxml2-utils xsltproc fop
+        build-essential autoconf m4 curl git ca-certificates gpg wget unzip \
+        libssl-dev libncurses-dev libreadline-dev libffi-dev zlib1g-dev libbz2-dev \
+        libsqlite3-dev liblzma-dev libgdbm-dev tk-dev uuid-dev xz-utils \
+        libwxgtk3.2-dev libgl1-mesa-dev libglu1-mesa-dev libssh-dev unixodbc-dev \
+        libxml2-utils xsltproc fop
 }
 
-install_or_update_zsh() {
-    have apt-get || { warn "apt-get not found, install zsh manually"; return; }
+setup_zsh() {
+    need_apt "install zsh manually" || return
     $SUDO apt-get update -qq
-    if dpkg -s zsh >/dev/null 2>&1; then
-        log "[zsh] installed ($(dpkg-query -W -f='${Version}' zsh)), upgrading"
-        $SUDO apt-get install -y --only-upgrade zsh
-    else
-        log "[zsh] installing"
-        $SUDO apt-get install -y zsh
-    fi
-    
+    apt_install_or_upgrade zsh zsh
+
     local user zsh_path login_shell
     user=$(id -un)
     zsh_path=$(command -v zsh)
@@ -75,20 +103,18 @@ install_or_update_zsh() {
         log "[zsh] making it the login shell for $user (takes effect at next login)"
         $SUDO chsh -s "$zsh_path" "$user"
     fi
-    
+
     have git || die "git is needed for oh-my-zsh (install it or drop --no-system)"
-    local omz="${ZSH:-$HOME/.oh-my-zsh}" tmp
+    local omz="${ZSH:-$HOME/.oh-my-zsh}"
     if [ -d "$omz/.git" ]; then
         log "[oh-my-zsh] present, updating"
         ZSH="$omz" zsh -f "$omz/tools/upgrade.sh" -v minimal || warn "[oh-my-zsh] update failed, continuing"
-        elif [ -e "$omz" ]; then
+    elif [ -e "$omz" ]; then
         warn "[oh-my-zsh] $omz exists but is not a git checkout, not touching it"
     else
         log "[oh-my-zsh] installing to $omz"
-        tmp=$(mktemp)
-        curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -o "$tmp"
-        ZSH="$omz" sh "$tmp" --unattended
-        rm -f "$tmp"
+        ZSH="$omz" run_remote_script https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh \
+            sh --unattended
     fi
 }
 
@@ -97,67 +123,68 @@ ensure_asdf() {
     export PATH="$HOME/.local/bin:$ASDF_DATA_DIR/shims:$PATH"
     local arch latest_tag current="" dir="$HOME/.local/bin" tmp
     case "$(uname -m)" in
-    x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;;
-    *) die "unsupported architecture $(uname -m)" ;;
-esac
+        x86_64) arch=amd64 ;;
+        aarch64|arm64) arch=arm64 ;;
+        *) die "unsupported architecture $(uname -m)" ;;
+    esac
 
-latest_tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-https://github.com/asdf-vm/asdf/releases/latest | sed 's|.*/||')
-[ -n "$latest_tag" ] || die "could not determine latest asdf release"
+    latest_tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+        https://github.com/asdf-vm/asdf/releases/latest | sed 's|.*/||')
+    [ -n "$latest_tag" ] || die "could not determine latest asdf release"
 
-have asdf && current=$(asdf --version | awk '{print $3}' | sed 's/,$//; s/^\(v\)\?/v/')
-if [ "$current" = "$latest_tag" ]; then
-    log "asdf $current is up to date"
+    have asdf && current=$(asdf --version | awk '{print $3}' | sed 's/,$//; s/^\(v\)\?/v/')
+    if [ "$current" = "$latest_tag" ]; then
+        log "asdf $current is up to date"
     elif have asdf && [ "$(command -v asdf)" != "$dir/asdf" ]; then
-    warn "asdf $current is managed elsewhere ($(command -v asdf)); latest is $latest_tag, not touching it"
-else
-    log "Installing asdf $latest_tag to $dir"
-    mkdir -p "$dir"
-    tmp=$(mktemp -d)
-    curl -fsSL "https://github.com/asdf-vm/asdf/releases/download/${latest_tag}/asdf-${latest_tag}-linux-${arch}.tar.gz" \
-    | tar -xz -C "$tmp"
-    install -m 0755 "$tmp/asdf" "$dir/asdf"
-    rm -rf "$tmp"
-fi
-setup_shell_rc
-hash -r
+        warn "asdf $current is managed elsewhere ($(command -v asdf)); latest is $latest_tag, not touching it"
+    else
+        log "Installing asdf $latest_tag to $dir"
+        mkdir -p "$dir"
+        tmp=$(mktemp -d)
+        curl -fsSL "https://github.com/asdf-vm/asdf/releases/download/${latest_tag}/asdf-${latest_tag}-linux-${arch}.tar.gz" \
+            | tar -xz -C "$tmp"
+        install -m 0755 "$tmp/asdf" "$dir/asdf"
+        rm -rf "$tmp"
+    fi
+    setup_shell_rc
+    hash -r
 }
 
 setup_shell_rc() {
-local marker="# >>> devtools asdf >>>" rc
-for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    [ "$rc" = "$HOME/.zshrc" ] && ! have zsh && continue
-    touch "$rc"
-    grep -qF "$marker" "$rc" && continue
-    cat >>"$rc" <<'RC'
+    local marker="# >>> devtools asdf >>>" rc
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        [ "$rc" = "$HOME/.zshrc" ] && ! have zsh && continue
+        touch "$rc"
+        grep -qF "$marker" "$rc" && continue
+        cat >>"$rc" <<'RC'
 # >>> devtools asdf >>>
 export ASDF_DATA_DIR="${ASDF_DATA_DIR:-$HOME/.asdf}"
 export PATH="$HOME/.local/bin:$ASDF_DATA_DIR/shims:$PATH"
 # <<< devtools asdf <<<
 RC
-    log "Added asdf PATH setup to $rc"
-done
+        log "Added asdf PATH setup to $rc"
+    done
 }
 
 asdf_set_global() {
-local tool=$1 version=$2
-if asdf set --help >/dev/null 2>&1; then
-    asdf set --home "$tool" "$version"
-else
-    asdf global "$tool" "$version"
-fi
+    local tool=$1 version=$2
+    if asdf set --help >/dev/null 2>&1; then
+        asdf set --home "$tool" "$version"
+    else
+        asdf global "$tool" "$version"
+    fi
 }
 
 latest_version() {
-local tool=$1 v
-case "$tool" in
-    python)
-    v=$(asdf list all python | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1) ;;
-    elixir)
-        [ -n "${ERL_MAJOR:-}" ] || ERL_MAJOR=$(asdf latest erlang | cut -d. -f1)
-        v=$(asdf list all elixir | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-otp-[0-9]+$' \
-            | awk -F'-otp-' -v max="$ERL_MAJOR" '$2<=max' | sort -V | tail -n1) ;;
-            *)
+    local tool=$1 v
+    case "$tool" in
+        python)
+            v=$(asdf list all python | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1) ;;
+        elixir)
+            [ -n "${ERL_MAJOR:-}" ] || ERL_MAJOR=$(asdf latest erlang | cut -d. -f1)
+            v=$(asdf list all elixir | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-otp-[0-9]+$' \
+                | awk -F'-otp-' -v max="$ERL_MAJOR" '$2<=max' | sort -V | tail -n1) ;;
+        *)
             v=$(asdf latest "$tool") ;;
     esac
     [ -n "$v" ] || die "could not resolve latest $tool"
@@ -173,7 +200,7 @@ manage_tool() {
         log "[$tool] plugin missing, adding"
         asdf plugin add "$tool"
     fi
-    
+
     latest=$(latest_version "$tool")
     if asdf list "$tool" 2>/dev/null | sed 's/^[ *]*//' | grep -qx "$latest"; then
         log "[$tool] $latest already installed"
@@ -193,31 +220,34 @@ report_asdf() {
     done
 }
 
-install_or_update_vscode() {
-    have apt-get || { warn "apt-get not found, install VS Code manually"; return; }
-    
-    if [ ! -f /etc/apt/sources.list.d/vscode.sources ] && [ ! -f /etc/apt/sources.list.d/vscode.list ]; then
-        log "[vscode] adding Microsoft apt repository"
-        local keyring=/usr/share/keyrings/microsoft.gpg
-        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | $SUDO tee "$keyring" >/dev/null
-        printf 'Types: deb\nURIs: https://packages.microsoft.com/repos/code\nSuites: stable\nComponents: main\nArchitectures: amd64,arm64,armhf\nSigned-By: %s\n' "$keyring" \
-        | $SUDO tee /etc/apt/sources.list.d/vscode.sources >/dev/null
-        $SUDO apt-get update -qq
-    else
-        $SUDO apt-get update -qq
-    fi
-    
-    if dpkg -s code >/dev/null 2>&1; then
-        log "[vscode] installed ($(dpkg-query -W -f='${Version}' code)), upgrading"
-        $SUDO apt-get install -y --only-upgrade code
-    else
-        log "[vscode] installing"
-        $SUDO apt-get install -y code
-    fi
+setup_vscode() {
+    need_apt "install VS Code manually" || return
+    local keyring=/usr/share/keyrings/microsoft.gpg
+    ensure_apt_repo vscode Microsoft vscode https://packages.microsoft.com/keys/microsoft.asc "$keyring" "gpg --dearmor" <<EOF
+Types: deb
+URIs: https://packages.microsoft.com/repos/code
+Suites: stable
+Components: main
+Architectures: amd64,arm64,armhf
+Signed-By: $keyring
+EOF
+    apt_install_or_upgrade vscode code
 }
 
-install_or_update_flatpaks() {
-    have apt-get || { warn "apt-get not found, install flatpak manually"; return; }
+setup_sublime_merge() {
+    need_apt "install Sublime Merge manually" || return
+    local keyring=/etc/apt/keyrings/sublimehq-pub.asc
+    ensure_apt_repo sublime-merge "Sublime HQ" sublime-text https://download.sublimetext.com/sublimehq-pub.gpg "$keyring" cat <<EOF
+Types: deb
+URIs: https://download.sublimetext.com/
+Suites: apt/stable/
+Signed-By: $keyring
+EOF
+    apt_install_or_upgrade sublime-merge sublime-merge
+}
+
+setup_flatpaks() {
+    need_apt "install flatpak manually" || return
     if ! have flatpak; then
         log "[flatpak] installing"
         $SUDO apt-get install -y flatpak
@@ -238,11 +268,26 @@ install_or_update_flatpaks() {
     done
 }
 
-[ "$DO_SYSTEM" -eq 1 ] && install_system_deps
-[ "$DO_ZSH" -eq 1 ] && install_or_update_zsh
+setup_claude() {
+    local bin="$HOME/.local/bin/claude"
+    if [ -L "$bin" ] && [[ "$(readlink -f "$bin")" == "$HOME/.local/share/claude/"* ]]; then
+        log "[claude] installed, checking for updates"
+        "$bin" update </dev/null || warn "[claude] update failed, continuing"
+    elif have claude; then
+        warn "[claude] managed elsewhere ($(command -v claude)), not touching it"
+    else
+        log "[claude] installing"
+        run_remote_script https://claude.ai/install.sh bash </dev/null
+    fi
+}
+
+[ "${ENABLED[system]}" -eq 1 ] && setup_system_deps
+[ "${ENABLED[zsh]}" -eq 1 ] && setup_zsh
 ensure_asdf
 for t in "${ASDF_TOOLS[@]}"; do manage_tool "$t"; done
-[ "$DO_VSCODE" -eq 1 ] && install_or_update_vscode
-[ "$DO_FLATPAK" -eq 1 ] && install_or_update_flatpaks
+[ "${ENABLED[vscode]}" -eq 1 ] && setup_vscode
+[ "${ENABLED[sublime-merge]}" -eq 1 ] && setup_sublime_merge
+[ "${ENABLED[flatpak]}" -eq 1 ] && setup_flatpaks
+[ "${ENABLED[claude]}" -eq 1 ] && setup_claude
 report_asdf
 log "Done."
