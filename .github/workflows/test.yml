@@ -1,0 +1,62 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly, to catch upstream breakage (new releases, moved URLs, repo key changes).
+    - cron: "0 6 * * 1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck devtools
+      - name: argument handling
+        run: |
+          ./devtools --help | grep -q '^Usage: devtools'
+          for bad in --no-bogus --no- bogus; do
+            if ./devtools "$bad" 2>err; then echo "expected '$bad' to fail"; exit 1; fi
+            grep -q "unknown argument: $bad" err
+          done
+
+  install:
+    # Builds Erlang and Python from source, so this takes a while.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: First run (fresh machine)
+        run: ./devtools
+
+      - name: Verify everything is installed
+        run: &verify |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$HOME/.asdf/shims:$PATH"
+          check() { printf '%-16s' "$1"; shift; "$@" || { echo "FAILED"; exit 1; }; }
+
+          check zsh            zsh --version
+          check login-shell    sh -c 'getent passwd "$(id -un)" | cut -d: -f7 | grep -q zsh && echo zsh'
+          check oh-my-zsh      test -d "$HOME/.oh-my-zsh/.git"
+          check asdf           asdf --version
+          check bashrc         grep -q '# >>> devtools asdf >>>' "$HOME/.bashrc"
+          check zshrc          grep -q '# >>> devtools asdf >>>' "$HOME/.zshrc"
+          check erlang         erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
+          check elixir         elixir --version
+          check python         python --version
+          check vscode         code --version
+          check sublime-merge  sh -c 'dpkg-query -W sublime-merge && command -v smerge'
+          check flatpak        flatpak --version
+          check bambu-studio   flatpak info com.bambulab.BambuStudio
+          check claude         claude --version
+
+      - name: Second run (should be a no-op update)
+        run: ./devtools
+
+      - name: Verify again
+        run: *verify
