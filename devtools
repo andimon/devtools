@@ -94,12 +94,13 @@ ensure_apt_repo() {
     apt_update
 }
 
-# Download a script to a temp file and run it: run_remote_script URL INTERPRETER [ARGS...]
+# Download a script to a temp file and run it: run_remote_script URL INTERPRETER [SCRIPT_ARGS...]
+# Runs `INTERPRETER TMPFILE SCRIPT_ARGS...`, so the args go to the script, not the interpreter.
 run_remote_script() {
-    local url=$1 tmp; shift
+    local url=$1 interpreter=$2 tmp; shift 2
     tmp=$(mktemp)
     curl -fsSL "$url" -o "$tmp"
-    "$@" "$tmp"
+    "$interpreter" "$tmp" "$@"
     rm -f "$tmp"
 }
 
