@@ -37,7 +37,7 @@ for arg in "$@"; do
     case "$arg" in
         --no-*)
             step=${arg#--no-}
-            [ -n "$step" ] && [ -n "${ENABLED[$step]+set}" ] || unknown "$arg"
+            if [ -z "$step" ] || [ -z "${ENABLED[$step]+set}" ]; then unknown "$arg"; fi
             ENABLED[$step]=0 ;;
         -h|--help)
             usage
