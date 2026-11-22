@@ -4,7 +4,14 @@ set -euo pipefail
 ASDF_TOOLS=(erlang elixir python)
 ALL_TOOLS=("${ASDF_TOOLS[@]}")
 FLATPAK_APPS=(com.bambulab.BambuStudio)
-declare -A ENABLED=([system]=1 [zsh]=1 [vscode]=1 [flatpak]=1 [claude]=1 [sublime-merge]=1)
+
+# Optional steps, each skippable with --no-<step> and run by setup_<step> (dashes become underscores).
+# EARLY_STEPS run before asdf and its tools, LATE_STEPS after.
+EARLY_STEPS=(system zsh)
+LATE_STEPS=(vscode sublime-merge gh flatpak claude)
+STEPS=("${EARLY_STEPS[@]}" "${LATE_STEPS[@]}")
+declare -A ENABLED
+for step in "${STEPS[@]}"; do ENABLED[$step]=1; done
 SELECTED=()
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -13,16 +20,30 @@ die()  { printf '\033[1;31mxx\033[0m  %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 unknown() { die "unknown argument: $1 (known tools: ${ALL_TOOLS[*]})"; }
 
+# contains NEEDLE ITEM...: succeed if NEEDLE is one of the ITEMs.
+contains() {
+    local needle=$1 item; shift
+    for item; do [ "$item" = "$needle" ] && return 0; done
+    return 1
+}
+
+usage() {
+    printf 'Usage: devtools'
+    printf ' [--no-%s]' "${STEPS[@]}"
+    printf ' [tool ...]\n'
+}
+
 for arg in "$@"; do
     case "$arg" in
         --no-*)
-            [ -n "${arg#--no-}" ] && [ -n "${ENABLED[${arg#--no-}]+set}" ] || unknown "$arg"
-            ENABLED[${arg#--no-}]=0 ;;
+            step=${arg#--no-}
+            [ -n "$step" ] && [ -n "${ENABLED[$step]+set}" ] || unknown "$arg"
+            ENABLED[$step]=0 ;;
         -h|--help)
-            printf 'Usage: devtools [--no-system] [--no-zsh] [--no-vscode] [--no-flatpak] [--no-sublime-merge] [tool ...]\n'
+            usage
             exit 0 ;;
         *)
-            printf '%s\n' "${ALL_TOOLS[@]}" | grep -qx -- "$arg" || unknown "$arg"
+            contains "$arg" "${ALL_TOOLS[@]}" || unknown "$arg"
             SELECTED+=("$arg") ;;
     esac
 done
@@ -30,26 +51,30 @@ if [ "${#SELECTED[@]}" -gt 0 ]; then
     # Filter ALL_TOOLS rather than copying SELECTED: elixir's version depends on erlang running first.
     ASDF_TOOLS=()
     for t in "${ALL_TOOLS[@]}"; do
-        for s in "${SELECTED[@]}"; do [ "$s" = "$t" ] && ASDF_TOOLS+=("$t"); done
+        contains "$t" "${SELECTED[@]}" && ASDF_TOOLS+=("$t")
     done
-    for k in "${!ENABLED[@]}"; do [ "$k" = system ] || ENABLED[$k]=0; done
+    for step in "${STEPS[@]}"; do [ "$step" = system ] || ENABLED[$step]=0; done
 fi
 
-SUDO=""
-[ "$(id -u)" -ne 0 ] && SUDO="sudo"
+# Run a command as root, through sudo unless we already are root.
+as_root() {
+    if [ "$EUID" -eq 0 ]; then "$@"; else sudo "$@"; fi
+}
 
 # Warn and return non-zero when apt-get is unavailable: `need_apt "msg" || return`
 need_apt() { have apt-get || { warn "apt-get not found, $1"; return 1; }; }
+
+apt_update() { as_root apt-get update -qq; }
 
 # Install a deb package, or upgrade it if already installed.
 apt_install_or_upgrade() {
     local label=$1 pkg=$2
     if dpkg -s "$pkg" >/dev/null 2>&1; then
         log "[$label] installed ($(dpkg-query -W -f='${Version}' "$pkg")), upgrading"
-        $SUDO apt-get install -y --only-upgrade "$pkg"
+        as_root apt-get install -y --only-upgrade "$pkg"
     else
         log "[$label] installing"
-        $SUDO apt-get install -y "$pkg"
+        as_root apt-get install -y "$pkg"
     fi
 }
 
@@ -60,11 +85,13 @@ ensure_apt_repo() {
     local label=$1 vendor=$2 list=/etc/apt/sources.list.d/$3 key_url=$4 keyring=$5 key_filter=$6
     if [ ! -f "$list.sources" ] && [ ! -f "$list.list" ]; then
         log "[$label] adding $vendor apt repository"
-        $SUDO mkdir -p "${keyring%/*}"
-        curl -fsSL "$key_url" | $key_filter | $SUDO tee "$keyring" >/dev/null
-        $SUDO tee "$list.sources" >/dev/null
+        as_root mkdir -p "${keyring%/*}"
+        # KEY_FILTER is a command line (e.g. "gpg --dearmor"), so it is split into words on purpose.
+        # shellcheck disable=SC2086
+        curl -fsSL "$key_url" | $key_filter | as_root tee "$keyring" >/dev/null
+        as_root tee "$list.sources" >/dev/null
     fi
-    $SUDO apt-get update -qq
+    apt_update
 }
 
 # Download a script to a temp file and run it: run_remote_script URL INTERPRETER [ARGS...]
@@ -76,11 +103,11 @@ run_remote_script() {
     rm -f "$tmp"
 }
 
-setup_system_deps() {
+setup_system() {
     need_apt "skipping system build deps" || return
     log "Installing build dependencies (apt)"
-    $SUDO apt-get update -qq
-    $SUDO apt-get install -y --no-install-recommends \
+    apt_update
+    as_root apt-get install -y --no-install-recommends \
         build-essential autoconf m4 curl git ca-certificates gpg wget unzip \
         libssl-dev libncurses-dev libreadline-dev libffi-dev zlib1g-dev libbz2-dev \
         libsqlite3-dev liblzma-dev libgdbm-dev tk-dev uuid-dev xz-utils \
@@ -90,7 +117,7 @@ setup_system_deps() {
 
 setup_zsh() {
     need_apt "install zsh manually" || return
-    $SUDO apt-get update -qq
+    apt_update
     apt_install_or_upgrade zsh zsh
 
     local user zsh_path login_shell
@@ -101,7 +128,7 @@ setup_zsh() {
         log "[zsh] already the login shell for $user"
     else
         log "[zsh] making it the login shell for $user (takes effect at next login)"
-        $SUDO chsh -s "$zsh_path" "$user"
+        as_root chsh -s "$zsh_path" "$user"
     fi
 
     have git || die "git is needed for oh-my-zsh (install it or drop --no-system)"
@@ -215,6 +242,7 @@ manage_tool() {
 
 report_asdf() {
     log "asdf versions now active:"
+    local t
     for t in "${ASDF_TOOLS[@]}"; do
         printf '  %-8s %s\n' "$t" "$(asdf current "$t" 2>/dev/null | awk 'NR==1 && $1=="Name"{next} {print $2; exit}')"
     done
@@ -246,24 +274,37 @@ EOF
     apt_install_or_upgrade sublime-merge sublime-merge
 }
 
-setup_flatpaks() {
+setup_gh() {
+    need_apt "install the GitHub CLI manually" || return
+    local keyring=/etc/apt/keyrings/githubcli-archive-keyring.gpg
+    ensure_apt_repo gh GitHub github-cli https://cli.github.com/packages/githubcli-archive-keyring.gpg "$keyring" cat <<EOF
+Types: deb
+URIs: https://cli.github.com/packages
+Suites: stable
+Components: main
+Signed-By: $keyring
+EOF
+    apt_install_or_upgrade gh gh
+}
+
+setup_flatpak() {
     need_apt "install flatpak manually" || return
     if ! have flatpak; then
         log "[flatpak] installing"
-        $SUDO apt-get install -y flatpak
+        as_root apt-get install -y flatpak
     fi
     if ! flatpak remotes --columns=name 2>/dev/null | grep -qx flathub; then
         log "[flatpak] adding flathub remote"
-        $SUDO flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+        as_root flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
     fi
     local app
     for app in "${FLATPAK_APPS[@]}"; do
         if flatpak info "$app" >/dev/null 2>&1; then
             log "[flatpak] $app installed, updating"
-            $SUDO flatpak update -y --noninteractive "$app"
+            as_root flatpak update -y --noninteractive "$app"
         else
             log "[flatpak] installing $app"
-            $SUDO flatpak install -y --noninteractive flathub "$app"
+            as_root flatpak install -y --noninteractive flathub "$app"
         fi
     done
 }
@@ -281,13 +322,19 @@ setup_claude() {
     fi
 }
 
-[ "${ENABLED[system]}" -eq 1 ] && setup_system_deps
-[ "${ENABLED[zsh]}" -eq 1 ] && setup_zsh
+# Run each enabled step through its setup_<step> function.
+run_steps() {
+    local step
+    for step; do
+        if [ "${ENABLED[$step]}" -eq 1 ]; then
+            "setup_${step//-/_}"
+        fi
+    done
+}
+
+run_steps "${EARLY_STEPS[@]}"
 ensure_asdf
 for t in "${ASDF_TOOLS[@]}"; do manage_tool "$t"; done
-[ "${ENABLED[vscode]}" -eq 1 ] && setup_vscode
-[ "${ENABLED[sublime-merge]}" -eq 1 ] && setup_sublime_merge
-[ "${ENABLED[flatpak]}" -eq 1 ] && setup_flatpaks
-[ "${ENABLED[claude]}" -eq 1 ] && setup_claude
+run_steps "${LATE_STEPS[@]}"
 report_asdf
 log "Done."

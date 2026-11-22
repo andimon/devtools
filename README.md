@@ -19,6 +19,7 @@ The script will:
 - Set those versions as the default ones for your user.
 - Install VS Code from the Microsoft apt repository, or upgrade it if it is already installed.
 - Install Sublime Merge from the Sublime HQ apt repository, or upgrade it if it is already installed.
+- Install the [GitHub CLI](https://cli.github.com) (`gh`) from the GitHub apt repository, or upgrade it if it is already installed.
 - Install Flatpak and the Flathub store if missing, then install Bambu Studio or update it.
 - Install [Claude Code](https://claude.com/claude-code) with its official installer, or update it if it is already installed that way (a copy installed some other way is left alone).
 - Skip anything that is already installed and up to date, so it is safe to run again.

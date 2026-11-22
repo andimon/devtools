@@ -51,6 +51,7 @@ jobs:
           check python         python --version
           check vscode         code --version
           check sublime-merge  sh -c 'dpkg-query -W sublime-merge && command -v smerge'
+          check gh             gh --version
           check flatpak        flatpak --version
           check bambu-studio   flatpak info com.bambulab.BambuStudio
           check claude         claude --version
