@@ -54,6 +54,7 @@ jobs:
           check gh             gh --version
           check flatpak        flatpak --version
           check bambu-studio   flatpak info com.bambulab.BambuStudio
+          check todoist        flatpak info com.todoist.Todoist
           check claude         claude --version
 
       - name: Second run (should be a no-op update)

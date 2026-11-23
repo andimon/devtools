@@ -57,7 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/andimon/devtools/main/devtools | ba
 
 \begin{lstlisting}
 ./devtools                    # everything
-./devtools --no-flatpak       # everything except Flatpak and Bambu Studio
+./devtools --no-flatpak       # everything except Flatpak, Bambu Studio and Todoist
 ./devtools elixir             # only the system deps and the Elixir toolchain
 ./devtools --help
 \end{lstlisting}
@@ -258,9 +258,10 @@ Step & Repository file & Key file & Package \\
 added by hand following the vendor's own instructions (for example
 \cmd{github-cli.list}) is reused rather than added twice.
 
-\subsection{\cmd{flatpak}: Flatpak, Flathub and Bambu Studio}
+\subsection{\cmd{flatpak}: Flatpak, Flathub, Bambu Studio and Todoist}
 Installs Flatpak if it is missing, adds the Flathub remote if it is not configured,
-then installs or updates every app in \cmd{FLATPAK\_APPS} system-wide.
+then installs or updates every app in \cmd{FLATPAK\_APPS} system-wide:
+Bambu Studio (\cmd{com.bambulab.BambuStudio}) and Todoist (\cmd{com.todoist.Todoist}).
 
 \subsection{\cmd{claude}: Claude Code}
 If \cmd{\textasciitilde/.local/bin/claude} is a link into \cmd{\textasciitilde/.local/share/claude/}, the copy came

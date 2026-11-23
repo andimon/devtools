@@ -3,7 +3,7 @@ set -euo pipefail
 
 ASDF_TOOLS=(erlang elixir python)
 ALL_TOOLS=("${ASDF_TOOLS[@]}")
-FLATPAK_APPS=(com.bambulab.BambuStudio)
+FLATPAK_APPS=(com.bambulab.BambuStudio com.todoist.Todoist)
 
 # Optional steps, each skippable with --no-<step> and run by setup_<step> (dashes become underscores).
 # EARLY_STEPS run before asdf and its tools, LATE_STEPS after.
