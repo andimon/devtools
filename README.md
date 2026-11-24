@@ -22,6 +22,10 @@ Purpose: keeping my devtools consistent across Ubuntu machines.
     <td align="center" width="120"><img src="https://cdn.simpleicons.org/bambulab" width="48" height="48" alt="Bambu Studio"><br>Bambu Studio</td>
     <td align="center" width="120"><img src="https://cdn.simpleicons.org/todoist" width="48" height="48" alt="Todoist"><br>Todoist</td>
     <td align="center" width="120"><img src="https://cdn.simpleicons.org/claude" width="48" height="48" alt="Claude Code"><br>Claude Code</td>
+    <td align="center" width="120"><img src="https://cdn.simpleicons.org/freecad" width="48" height="48" alt="FreeCAD"><br>FreeCAD</td>
+  </tr>
+  <tr>
+    <td align="center" width="120"><img src="https://cdn.simpleicons.org/1password" width="48" height="48" alt="1Password"><br>1Password</td>
   </tr>
 </table>
 
@@ -43,8 +47,9 @@ The script will:
 - Install VS Code from the Microsoft apt repository, or upgrade it if it is already installed.
 - Install Sublime Merge from the Sublime HQ apt repository, or upgrade it if it is already installed.
 - Install the [GitHub CLI](https://cli.github.com) (`gh`) from the GitHub apt repository, or upgrade it if it is already installed.
+- Install [1Password](https://1password.com) from the 1Password apt repository (amd64 only), or upgrade it if it is already installed.
 - Install `pdflatex` and the LaTeX packages needed to build `docs/devtools.tex` (TeX Live from the Ubuntu repositories), or upgrade them if already installed.
-- Install Flatpak and the Flathub store if missing, then install Bambu Studio and Todoist or update them.
+- Install Flatpak and the Flathub store if missing, then install Bambu Studio, Todoist and FreeCAD or update them.
 - Install [Claude Code](https://claude.com/claude-code) with its official installer, or update it if it is already installed that way (a copy installed some other way is left alone).
 - Skip anything that is already installed and up to date, so it is safe to run again.
 - Print the versions that are now active when it finishes.

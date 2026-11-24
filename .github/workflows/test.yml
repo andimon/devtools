@@ -52,11 +52,13 @@ jobs:
           check vscode         code --version
           check sublime-merge  sh -c 'dpkg-query -W sublime-merge && command -v smerge'
           check gh             gh --version
+          check 1password      dpkg-query -W 1password
           check pdflatex       pdflatex --version
           check latex-docs     latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir="$RUNNER_TEMP/docs" docs/devtools.tex
           check flatpak        flatpak --version
           check bambu-studio   flatpak info com.bambulab.BambuStudio
           check todoist        flatpak info com.todoist.Todoist
+          check freecad        flatpak info org.freecad.FreeCAD
           check claude         claude --version
 
       - name: Second run (should be a no-op update)

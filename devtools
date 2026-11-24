@@ -3,14 +3,14 @@ set -euo pipefail
 
 ASDF_TOOLS=(erlang elixir python)
 ALL_TOOLS=("${ASDF_TOOLS[@]}")
-FLATPAK_APPS=(com.bambulab.BambuStudio com.todoist.Todoist)
+FLATPAK_APPS=(com.bambulab.BambuStudio com.todoist.Todoist org.freecad.FreeCAD)
 # pdflatex plus the packages docs/devtools.tex needs (tikz, listings, booktabs, enumitem, lmodern).
 LATEX_PACKAGES=(texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended latexmk)
 
 # Optional steps, each skippable with --no-<step> and run by setup_<step> (dashes become underscores).
 # EARLY_STEPS run before asdf and its tools, LATE_STEPS after.
 EARLY_STEPS=(system zsh)
-LATE_STEPS=(vscode sublime-merge gh latex flatpak claude)
+LATE_STEPS=(vscode sublime-merge gh 1password latex flatpak claude)
 STEPS=("${EARLY_STEPS[@]}" "${LATE_STEPS[@]}")
 declare -A ENABLED
 for step in "${STEPS[@]}"; do ENABLED[$step]=1; done
@@ -288,6 +288,22 @@ Components: main
 Signed-By: $keyring
 EOF
     apt_install_or_upgrade gh gh
+}
+
+setup_1password() {
+    need_apt "install 1Password manually" || return
+    # 1Password's apt repository only ships amd64 builds.
+    [ "$(dpkg --print-architecture)" = amd64 ] || { warn "[1password] no apt package for $(dpkg --print-architecture), skipping"; return; }
+    local keyring=/usr/share/keyrings/1password-archive-keyring.gpg
+    ensure_apt_repo 1password 1Password 1password https://downloads.1password.com/linux/keys/1password.asc "$keyring" "gpg --dearmor" <<EOF
+Types: deb
+URIs: https://downloads.1password.com/linux/debian/amd64
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: $keyring
+EOF
+    apt_install_or_upgrade 1password 1password
 }
 
 setup_latex() {
