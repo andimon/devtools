@@ -4,11 +4,13 @@ set -euo pipefail
 ASDF_TOOLS=(erlang elixir python)
 ALL_TOOLS=("${ASDF_TOOLS[@]}")
 FLATPAK_APPS=(com.bambulab.BambuStudio com.todoist.Todoist)
+# pdflatex plus the packages docs/devtools.tex needs (tikz, listings, booktabs, enumitem, lmodern).
+LATEX_PACKAGES=(texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended latexmk)
 
 # Optional steps, each skippable with --no-<step> and run by setup_<step> (dashes become underscores).
 # EARLY_STEPS run before asdf and its tools, LATE_STEPS after.
 EARLY_STEPS=(system zsh)
-LATE_STEPS=(vscode sublime-merge gh flatpak claude)
+LATE_STEPS=(vscode sublime-merge gh latex flatpak claude)
 STEPS=("${EARLY_STEPS[@]}" "${LATE_STEPS[@]}")
 declare -A ENABLED
 for step in "${STEPS[@]}"; do ENABLED[$step]=1; done
@@ -286,6 +288,13 @@ Components: main
 Signed-By: $keyring
 EOF
     apt_install_or_upgrade gh gh
+}
+
+setup_latex() {
+    need_apt "install TeX Live manually" || return
+    apt_update
+    local pkg
+    for pkg in "${LATEX_PACKAGES[@]}"; do apt_install_or_upgrade latex "$pkg"; done
 }
 
 setup_flatpak() {
