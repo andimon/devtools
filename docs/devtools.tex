@@ -154,6 +154,10 @@ Helper & What it does \\
 \cmd{log}, \cmd{warn}, \cmd{die} & Print a coloured message; \cmd{warn} and \cmd{die} write to stderr and \cmd{die} exits with status 1. \\
 \cmd{have} \textit{cmd} & True if \textit{cmd} is on \cmd{PATH}. \\
 \cmd{contains} \textit{x list\ldots} & True if \textit{x} is one of the list items. \\
+\cmd{cpu\_arch} & Prints the CPU architecture as Debian names it (\cmd{amd64} or \cmd{arm64}) and dies on anything else. \\
+\cmd{os\_codename} & Prints the Ubuntu release codename (for example \cmd{noble}), read from \cmd{/etc/os-release} in a subshell, for vendor repositories with one suite per release. \\
+\cmd{latest\_github\_tag} \textit{owner/repo} & Prints the tag of a GitHub project's latest release by following the \cmd{/releases/latest} redirect, so no API token is needed. \\
+\cmd{apt\_owns} \textit{label cmd pkg} & Warns and fails when \textit{cmd} is on \cmd{PATH} but the deb \textit{pkg} is not installed, i.e.\ the tool was installed some other way; used as \cmd{apt\_owns \ldots{} || return}. \\
 \cmd{as\_root} \textit{cmd\ldots} & Runs the command directly when already root, otherwise through \cmd{sudo}. \\
 \cmd{need\_apt} \textit{msg} & Warns and fails when \cmd{apt-get} is missing; used as \cmd{need\_apt "\ldots" || return}. \\
 \cmd{apt\_update} & \cmd{apt-get update -qq} as root. \\
@@ -200,11 +204,25 @@ stores the key as it comes. Because the existence check also accepts a \cmd{.lis
 file, a repository that was added by hand following the vendor's own instructions
 is reused rather than added twice.
 
+\noindent A step whose command may already be on the machine from somewhere else (a
+runner image, a manual install) starts with \cmd{apt\_owns}, so a copy the script did not
+install is left alone instead of being shadowed by a second one. A vendor that has one
+suite per Ubuntu release takes it from \cmd{os\_codename}. A vendor that has one repository
+per release line (such as one per minor version) has its \cmd{.sources} file removed when
+the line moves on, so that \cmd{ensure\_apt\_repo} writes the new one and fetches its key.
+
 \subsection{Official installer script}
 When a tool ships its own installer and updater, the step checks whether the tool
 is present and was installed by that installer. If so it runs the tool's own update
 command; if it was installed some other way it is left alone; otherwise the installer
 is fetched and run with \cmd{run\_remote\_script}.
+
+\subsection{Release binary}
+For a tool shipped as a single binary on GitHub releases, the step finds the newest tag
+with \cmd{latest\_github\_tag} and compares it with the version the installed binary
+reports. When they differ it downloads the asset for \cmd{cpu\_arch} together with the
+release's checksum file, verifies it with \cmd{sha256sum -c}, and installs it into
+\cmd{\textasciitilde/.local/bin}. A copy found anywhere else on \cmd{PATH} is left alone.
 
 \subsection{Other package managers}
 Steps that use another package manager (for example a sandboxed app store) first
@@ -213,14 +231,13 @@ the corresponding data array.
 
 \section{asdf (always runs)}
 \cmd{ensure\_asdf} puts \cmd{\textasciitilde/.local/bin} and the asdf shims on \cmd{PATH} for the rest
-of the run, then finds the newest asdf release by following GitHub's
-\cmd{/releases/latest} redirect. It compares that tag with \cmd{asdf -{}-version}:
+of the run, then finds the newest asdf release with \cmd{latest\_github\_tag}. It compares that tag with \cmd{asdf -{}-version}:
 
 \begin{itemize}
 \item same version: nothing to do;
 \item an asdf exists somewhere other than \cmd{\textasciitilde/.local/bin}: warn and leave it alone;
 \item otherwise: download the release archive for the machine's architecture
-  (amd64 or arm64) and install the binary into \cmd{\textasciitilde/.local/bin}.
+  (\cmd{cpu\_arch}) and install the binary into \cmd{\textasciitilde/.local/bin}.
 \end{itemize}
 
 \noindent It then calls \cmd{setup\_shell\_rc}, which appends a block between the markers

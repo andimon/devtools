@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ASDF_TOOLS=(erlang elixir python)
+ASDF_TOOLS=(erlang elixir python nodejs)
 ALL_TOOLS=("${ASDF_TOOLS[@]}")
 FLATPAK_APPS=(com.bambulab.BambuStudio com.todoist.Todoist org.freecad.FreeCAD)
+# Global npm packages, installed into the asdf Node.js.
+NPM_PACKAGES=(pnpm typescript wrangler)
+SNAP_APPS=(postman)
+DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
 # pdflatex plus the packages docs/devtools.tex needs (tikz, listings, booktabs, enumitem, lmodern).
 LATEX_PACKAGES=(texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended latexmk)
 
 # Optional steps, each skippable with --no-<step> and run by setup_<step> (dashes become underscores).
 # EARLY_STEPS run before asdf and its tools, LATE_STEPS after.
 EARLY_STEPS=(system zsh)
-LATE_STEPS=(vscode sublime-merge gh 1password latex flatpak claude)
+LATE_STEPS=(npm vscode sublime-merge gh 1password latex flatpak snap claude claude-desktop
+            docker kubectl helm terraform terragrunt aws)
 STEPS=("${EARLY_STEPS[@]}" "${LATE_STEPS[@]}")
 declare -A ENABLED
 for step in "${STEPS[@]}"; do ENABLED[$step]=1; done
@@ -57,6 +62,36 @@ if [ "${#SELECTED[@]}" -gt 0 ]; then
     done
     for step in "${STEPS[@]}"; do [ "$step" = system ] || ENABLED[$step]=0; done
 fi
+
+# Print the CPU architecture as Debian names it (amd64 or arm64), or die.
+cpu_arch() {
+    case "$(uname -m)" in
+        x86_64) echo amd64 ;;
+        aarch64|arm64) echo arm64 ;;
+        *) die "unsupported architecture $(uname -m)" ;;
+    esac
+}
+
+# Print the Ubuntu release codename (e.g. noble), for vendor repos that have one suite per release.
+os_codename() {
+    # shellcheck source=/dev/null
+    (. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+}
+
+# Print the tag of a GitHub repo's latest release (OWNER/REPO), by following the /releases/latest redirect.
+latest_github_tag() {
+    curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest" | sed 's|.*/||'
+}
+
+# Fail (with a warning) when CMD is on PATH but not from deb PKG, so a copy installed
+# some other way is left alone: `apt_owns LABEL CMD PKG || return`
+apt_owns() {
+    local label=$1 cmd=$2 pkg=$3
+    if have "$cmd" && ! dpkg -s "$pkg" >/dev/null 2>&1; then
+        warn "[$label] managed elsewhere ($(command -v "$cmd")), not touching it"
+        return 1
+    fi
+}
 
 # Run a command as root, through sudo unless we already are root.
 as_root() {
@@ -152,14 +187,8 @@ ensure_asdf() {
     export ASDF_DATA_DIR="${ASDF_DATA_DIR:-$HOME/.asdf}"
     export PATH="$HOME/.local/bin:$ASDF_DATA_DIR/shims:$PATH"
     local arch latest_tag current="" dir="$HOME/.local/bin" tmp
-    case "$(uname -m)" in
-        x86_64) arch=amd64 ;;
-        aarch64|arm64) arch=arm64 ;;
-        *) die "unsupported architecture $(uname -m)" ;;
-    esac
-
-    latest_tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-        https://github.com/asdf-vm/asdf/releases/latest | sed 's|.*/||')
+    arch=$(cpu_arch)
+    latest_tag=$(latest_github_tag asdf-vm/asdf)
     [ -n "$latest_tag" ] || die "could not determine latest asdf release"
 
     have asdf && current=$(asdf --version | awk '{print $3}' | sed 's/,$//; s/^\(v\)\?/v/')
@@ -304,6 +333,7 @@ Architectures: amd64
 Signed-By: $keyring
 EOF
     apt_install_or_upgrade 1password 1password
+    apt_install_or_upgrade 1password 1password-cli
 }
 
 setup_latex() {
@@ -346,6 +376,159 @@ setup_claude() {
         log "[claude] installing"
         run_remote_script https://claude.ai/install.sh bash </dev/null
     fi
+}
+
+setup_npm() {
+    have npm || { warn "[npm] npm not found (is nodejs in ASDF_TOOLS?), skipping"; return; }
+    local pkg path
+    for pkg in "${NPM_PACKAGES[@]}"; do
+        path=$(command -v "$pkg" 2>/dev/null || true)
+        # wrangler installs the `wrangler` command, typescript installs `tsc`.
+        [ "$pkg" = typescript ] && path=$(command -v tsc 2>/dev/null || true)
+        if [ -n "$path" ] && [[ "$path" != "$ASDF_DATA_DIR/shims/"* ]]; then
+            warn "[npm] $pkg managed elsewhere ($path), not touching it"
+            continue
+        fi
+        log "[npm] installing or updating $pkg"
+        npm install -g --no-fund --no-audit "$pkg@latest"
+    done
+    asdf reshim nodejs >/dev/null 2>&1 || true
+}
+
+setup_snap() {
+    have snap || { warn "[snap] snapd not found, skipping ${SNAP_APPS[*]}"; return; }
+    local app
+    for app in "${SNAP_APPS[@]}"; do
+        if snap list "$app" >/dev/null 2>&1; then
+            log "[snap] $app installed, refreshing"
+            as_root snap refresh "$app"
+        else
+            log "[snap] installing $app"
+            as_root snap install "$app"
+        fi
+    done
+}
+
+setup_claude_desktop() {
+    need_apt "install the Claude desktop app manually" || return
+    local keyring=/usr/share/keyrings/claude-desktop-archive-keyring.asc
+    ensure_apt_repo claude-desktop Anthropic claude-desktop https://downloads.claude.ai/claude-desktop/key.asc "$keyring" cat <<EOF
+Types: deb
+URIs: https://downloads.claude.ai/claude-desktop/apt/stable
+Suites: stable
+Components: main
+Architectures: amd64,arm64
+Signed-By: $keyring
+EOF
+    apt_install_or_upgrade claude-desktop claude-desktop
+}
+
+setup_docker() {
+    need_apt "install Docker manually" || return
+    apt_owns docker docker docker-ce || return
+    local keyring=/etc/apt/keyrings/docker.asc pkg user
+    ensure_apt_repo docker Docker docker https://download.docker.com/linux/ubuntu/gpg "$keyring" cat <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(os_codename)
+Components: stable
+Signed-By: $keyring
+EOF
+    for pkg in "${DOCKER_PACKAGES[@]}"; do apt_install_or_upgrade docker "$pkg"; done
+
+    user=$(id -un)
+    if [ "$EUID" -ne 0 ] && ! id -nG "$user" | tr ' ' '\n' | grep -qx docker; then
+        log "[docker] adding $user to the docker group (takes effect at next login)"
+        as_root usermod -aG docker "$user"
+    fi
+}
+
+setup_kubectl() {
+    need_apt "install kubectl manually" || return
+    apt_owns kubectl kubectl kubectl || return
+    # pkgs.k8s.io has one repository per minor release, so follow the current stable minor.
+    local minor keyring=/etc/apt/keyrings/kubernetes-apt-keyring.gpg list=/etc/apt/sources.list.d/kubernetes
+    minor=$(curl -fsSL https://dl.k8s.io/release/stable.txt | cut -d. -f1,2)
+    [ -n "$minor" ] || die "[kubectl] could not determine the stable Kubernetes release"
+    if [ -f "$list.sources" ] && ! grep -q "/$minor/" "$list.sources"; then
+        log "[kubectl] moving apt repository to $minor"
+        as_root rm -f "$list.sources"
+    fi
+    ensure_apt_repo kubectl Kubernetes kubernetes "https://pkgs.k8s.io/core:/stable:/$minor/deb/Release.key" "$keyring" "gpg --dearmor" <<EOF
+Types: deb
+URIs: https://pkgs.k8s.io/core:/stable:/$minor/deb/
+Suites: /
+Signed-By: $keyring
+EOF
+    apt_install_or_upgrade kubectl kubectl
+}
+
+setup_helm() {
+    need_apt "install Helm manually" || return
+    apt_owns helm helm helm || return
+    local keyring=/usr/share/keyrings/helm.gpg
+    ensure_apt_repo helm Helm helm-stable-debian https://packages.buildkite.com/helm-linux/helm-debian/gpgkey "$keyring" "gpg --dearmor" <<EOF
+Types: deb
+URIs: https://packages.buildkite.com/helm-linux/helm-debian/any/
+Suites: any
+Components: main
+Signed-By: $keyring
+EOF
+    apt_install_or_upgrade helm helm
+}
+
+setup_terraform() {
+    need_apt "install Terraform manually" || return
+    apt_owns terraform terraform terraform || return
+    local keyring=/usr/share/keyrings/hashicorp-archive-keyring.gpg
+    ensure_apt_repo terraform HashiCorp hashicorp https://apt.releases.hashicorp.com/gpg "$keyring" "gpg --dearmor" <<EOF
+Types: deb
+URIs: https://apt.releases.hashicorp.com
+Suites: $(os_codename)
+Components: main
+Signed-By: $keyring
+EOF
+    apt_install_or_upgrade terraform terraform
+}
+
+setup_terragrunt() {
+    local bin="$HOME/.local/bin/terragrunt" latest current="" asset tmp
+    if have terragrunt && [ "$(command -v terragrunt)" != "$bin" ]; then
+        warn "[terragrunt] managed elsewhere ($(command -v terragrunt)), not touching it"
+        return
+    fi
+    latest=$(latest_github_tag gruntwork-io/terragrunt)
+    [ -n "$latest" ] || die "[terragrunt] could not determine latest release"
+    [ -x "$bin" ] && current=$("$bin" --version | grep -oE 'v[0-9][^ ]*' | head -n1)
+    if [ "$current" = "$latest" ]; then
+        log "[terragrunt] $current is up to date"
+        return
+    fi
+    log "[terragrunt] installing $latest to $bin"
+    asset="terragrunt_linux_$(cpu_arch)"
+    tmp=$(mktemp -d)
+    curl -fsSL -o "$tmp/$asset" "https://github.com/gruntwork-io/terragrunt/releases/download/$latest/$asset"
+    curl -fsSL -o "$tmp/SHA256SUMS" "https://github.com/gruntwork-io/terragrunt/releases/download/$latest/SHA256SUMS"
+    (cd "$tmp" && grep " $asset\$" SHA256SUMS | sha256sum -c --quiet) || die "[terragrunt] checksum mismatch"
+    mkdir -p "${bin%/*}"
+    install -m 0755 "$tmp/$asset" "$bin"
+    rm -rf "$tmp"
+}
+
+setup_aws() {
+    # AWS's installer puts the CLI in /usr/local/aws-cli and links /usr/local/bin/aws; --update replaces it.
+    local bin=/usr/local/bin/aws arch tmp
+    if have aws && [ "$(command -v aws)" != "$bin" ]; then
+        warn "[aws] managed elsewhere ($(command -v aws)), not touching it"
+        return
+    fi
+    case "$(cpu_arch)" in amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; esac
+    log "[aws] installing or updating the AWS CLI"
+    tmp=$(mktemp -d)
+    curl -fsSL -o "$tmp/awscliv2.zip" "https://awscli.amazonaws.com/awscli-exe-linux-$arch.zip"
+    unzip -q "$tmp/awscliv2.zip" -d "$tmp"
+    as_root "$tmp/aws/install" --update
+    rm -rf "$tmp"
 }
 
 # Run each enabled step through its setup_<step> function.

@@ -49,10 +49,15 @@ jobs:
           check erlang         erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
           check elixir         elixir --version
           check python         python --version
+          check nodejs         node --version
+          check pnpm           pnpm --version
+          check typescript     tsc --version
+          check wrangler       wrangler --version
           check vscode         code --version
           check sublime-merge  sh -c 'dpkg-query -W sublime-merge && command -v smerge'
           check gh             gh --version
           check 1password      dpkg-query -W 1password
+          check 1password-cli  op --version
           check pdflatex       pdflatex --version
           check latex-docs     latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir="$RUNNER_TEMP/docs" docs/devtools.tex
           check flatpak        flatpak --version
@@ -60,6 +65,15 @@ jobs:
           check todoist        flatpak info com.todoist.Todoist
           check freecad        flatpak info org.freecad.FreeCAD
           check claude         claude --version
+          check postman        snap list postman
+          check claude-desktop dpkg-query -W claude-desktop
+          check docker         docker --version
+          check compose        docker compose version
+          check kubectl        kubectl version --client
+          check helm           helm version
+          check terraform      terraform version
+          check terragrunt     terragrunt --version
+          check aws            aws --version
 
       - name: Second run (should be a no-op update)
         run: ./devtools
