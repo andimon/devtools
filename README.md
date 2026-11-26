@@ -43,6 +43,9 @@ Purpose: keeping my devtools consistent across Ubuntu machines.
     <td align="center" width="120"><img src="https://cdn.simpleicons.org/freecad" width="48" height="48" alt="FreeCAD"><br>FreeCAD</td>
     <td align="center" width="120"><img src="https://cdn.simpleicons.org/1password" width="48" height="48" alt="1Password"><br>1Password</td>
   </tr>
+  <tr>
+    <td align="center" width="120"><img src="https://cdn.simpleicons.org/obsidian" width="48" height="48" alt="Obsidian"><br>Obsidian</td>
+  </tr>
 </table>
 
 To set up tools:
@@ -66,7 +69,7 @@ The script will:
 - Install the [GitHub CLI](https://cli.github.com) (`gh`) from the GitHub apt repository, or upgrade it if it is already installed.
 - Install [1Password](https://1password.com) and its CLI (`op`) from the 1Password apt repository (amd64 only), or upgrade them if already installed.
 - Install `pdflatex` and the LaTeX packages needed to build `docs/devtools.tex` (TeX Live from the Ubuntu repositories), or upgrade them if already installed.
-- Install Flatpak and the Flathub store if missing, then install Bambu Studio, Todoist and FreeCAD or update them.
+- Install Flatpak and the Flathub store if missing, then install Bambu Studio, Todoist, FreeCAD and Obsidian or update them.
 - Install [Postman](https://www.postman.com) from the Snap Store, or refresh it if it is already installed.
 - Install [Claude Code](https://claude.com/claude-code) with its official installer, or update it if it is already installed that way (a copy installed some other way is left alone).
 - Install the [Claude desktop app](https://claude.ai/download) from Anthropic's apt repository, or upgrade it if it is already installed.

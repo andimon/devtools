@@ -3,7 +3,7 @@ set -euo pipefail
 
 ASDF_TOOLS=(erlang elixir python nodejs)
 ALL_TOOLS=("${ASDF_TOOLS[@]}")
-FLATPAK_APPS=(com.bambulab.BambuStudio com.todoist.Todoist org.freecad.FreeCAD)
+FLATPAK_APPS=(com.bambulab.BambuStudio com.todoist.Todoist org.freecad.FreeCAD md.obsidian.Obsidian)
 # Global npm packages, installed into the asdf Node.js.
 NPM_PACKAGES=(pnpm typescript wrangler)
 SNAP_APPS=(postman)
