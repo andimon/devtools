@@ -45,6 +45,7 @@ Purpose: keeping my devtools consistent across Ubuntu machines.
   </tr>
   <tr>
     <td align="center" width="120"><img src="https://cdn.simpleicons.org/obsidian" width="48" height="48" alt="Obsidian"><br>Obsidian</td>
+    <td align="center" width="120"><img src="https://cdn.simpleicons.org/raspberrypi" width="48" height="48" alt="Raspberry Pi Imager"><br>Raspberry Pi Imager</td>
   </tr>
 </table>
 
@@ -71,6 +72,7 @@ The script will:
 - Install `pdflatex` and the LaTeX packages needed to build `docs/devtools.tex` (TeX Live from the Ubuntu repositories), or upgrade them if already installed.
 - Install Flatpak and the Flathub store if missing, then install Bambu Studio, Todoist, FreeCAD and Obsidian or update them.
 - Install [Postman](https://www.postman.com) from the Snap Store, or refresh it if it is already installed.
+- Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/) from Raspberry Pi's own `.deb` on GitHub, after checking its checksum, or upgrade it when a newer release is out.
 - Install [Claude Code](https://claude.com/claude-code) with its official installer, or update it if it is already installed that way (a copy installed some other way is left alone).
 - Install the [Claude desktop app](https://claude.ai/download) from Anthropic's apt repository, or upgrade it if it is already installed.
 - Install Docker Engine with Buildx and Compose from Docker's apt repository, or upgrade them, and add you to the `docker` group (takes effect at your next login).

@@ -66,6 +66,7 @@ jobs:
           check freecad        flatpak info org.freecad.FreeCAD
           check claude         claude --version
           check postman        snap list postman
+          check rpi-imager     dpkg -s rpi-imager
           check claude-desktop dpkg-query -W claude-desktop
           check docker         docker --version
           check compose        docker compose version

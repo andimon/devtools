@@ -14,7 +14,7 @@ LATEX_PACKAGES=(texlive-latex-base texlive-latex-recommended texlive-latex-extra
 # Optional steps, each skippable with --no-<step> and run by setup_<step> (dashes become underscores).
 # EARLY_STEPS run before asdf and its tools, LATE_STEPS after.
 EARLY_STEPS=(system zsh)
-LATE_STEPS=(npm vscode sublime-merge gh 1password latex flatpak snap claude claude-desktop
+LATE_STEPS=(npm vscode sublime-merge gh 1password latex flatpak snap rpi-imager claude claude-desktop
             docker kubectl helm terraform terragrunt aws)
 STEPS=("${EARLY_STEPS[@]}" "${LATE_STEPS[@]}")
 declare -A ENABLED
@@ -363,6 +363,31 @@ setup_flatpak() {
             as_root flatpak install -y --noninteractive flathub "$app"
         fi
     done
+}
+
+setup_rpi_imager() {
+    # Raspberry Pi publishes its own .deb on GitHub; the Flathub and Snap Store builds are community ones.
+    need_apt "install Raspberry Pi Imager manually" || return
+    apt_owns rpi-imager rpi-imager rpi-imager || return
+    local latest current="" deb base tmp
+    latest=$(latest_github_tag raspberrypi/rpi-imager)
+    [ -n "$latest" ] || die "[rpi-imager] could not determine latest release"
+    dpkg -s rpi-imager >/dev/null 2>&1 && current=$(dpkg-query -W -f='${Version}' rpi-imager)
+    if [ "${current%-*}" = "${latest#v}" ]; then
+        log "[rpi-imager] $current is up to date"
+        return
+    fi
+    log "[rpi-imager] installing $latest"
+    base="https://github.com/raspberrypi/rpi-imager/releases/download/$latest"
+    tmp=$(mktemp -d)
+    curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
+    deb=$(grep -oE "rpi-imager_${latest#v}-[0-9]+_$(cpu_arch)\.deb\$" "$tmp/SHA256SUMS") \
+        || die "[rpi-imager] no $(cpu_arch) .deb in $latest"
+    curl -fsSL -o "$tmp/$deb" "$base/$deb"
+    (cd "$tmp" && grep " $deb\$" SHA256SUMS | sha256sum -c --quiet) || die "[rpi-imager] checksum mismatch"
+    chmod 0755 "$tmp"
+    as_root apt-get install -y "$tmp/$deb"
+    rm -rf "$tmp"
 }
 
 setup_claude() {
