@@ -46,6 +46,7 @@ Purpose: keeping my devtools consistent across Ubuntu machines.
   <tr>
     <td align="center" width="120"><img src="https://cdn.simpleicons.org/obsidian" width="48" height="48" alt="Obsidian"><br>Obsidian</td>
     <td align="center" width="120"><img src="https://cdn.simpleicons.org/raspberrypi" width="48" height="48" alt="Raspberry Pi Imager"><br>Raspberry Pi Imager</td>
+    <td align="center" width="120"><img src="https://cdn.simpleicons.org/rust/000000/white" width="48" height="48" alt="Rust"><br>Rust</td>
   </tr>
 </table>
 
@@ -62,7 +63,7 @@ The script will:
 - Install [Oh My Zsh](https://ohmyz.sh), or update it if it is already there. On first install, Oh My Zsh moves your existing `~/.zshrc` to `~/.zshrc.pre-oh-my-zsh`.
 - Install [asdf](https://asdf-vm.com), the version manager, or update it if a newer version is out.
 - Add asdf to your `PATH` in `~/.bashrc` and `~/.zshrc` (only once).
-- Install the latest Erlang, then the latest Elixir that works with it, then the latest Python and Node.js.
+- Install the latest Erlang, then the latest Elixir that works with it, then the latest Python, Node.js and Rust (the Rust plugin installs the official toolchain from static.rust-lang.org, without rustup).
 - Set those versions as the default ones for your user.
 - Install pnpm, TypeScript and Cloudflare's Wrangler as global npm packages of that Node.js, or update them.
 - Install VS Code from the Microsoft apt repository, or upgrade it if it is already installed.

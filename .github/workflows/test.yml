@@ -25,7 +25,7 @@ jobs:
           done
 
   install:
-    # Builds Erlang and Python from source, so this takes a while.
+    # Builds Erlang and Python from source (Rust is a prebuilt download), so this takes a while.
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -50,6 +50,8 @@ jobs:
           check elixir         elixir --version
           check python         python --version
           check nodejs         node --version
+          check rust           rustc --version
+          check cargo          cargo --version
           check pnpm           pnpm --version
           check typescript     tsc --version
           check wrangler       wrangler --version
